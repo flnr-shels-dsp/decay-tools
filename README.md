@@ -5,7 +5,7 @@ Tools for analyzing decay time distributions in nuclear physics experiments
 # Installation
 
 ```
-pip install xxx
+pip install decay-tools
 ```
 
 # Usage
