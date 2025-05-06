@@ -26,12 +26,12 @@ if __name__ == "__main__":
     
     guess = DecayParameters(10, 100, 0)
     print(estimate_n_bins(log_times, method="std"))
-    data, bins = get_hist_and_bins(logt=log_times)
+    data, bins = get_hist_and_bins(logt=log_times, n_bins_method="iqr")
     
-    # res = fit_single_schmidt(data, bins, initial_guess=guess)
-    # visualize_single_fit(data, bins, res)
-    # print(res)
-    # print("\n\n")
+    res = fit_single_schmidt(data, bins, initial_guess=guess)
+    visualize_single_fit(data, bins, res)
+    print(res)
+    print("\n\n")
     
     g = DoubleDecayParameters(hl_short_us=5, hl_long_us=50, n0_short=50, n0_long=20, c=0)
     bound = (0, DoubleDecayParameters(1e-6, 1e-6, 100, 100, 1e-6))
