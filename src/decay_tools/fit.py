@@ -97,7 +97,7 @@ def fit_single_shmidt(
     check_chi_square: bool = True,
     chi_square_nddof: int = 3,
     visualize: bool = True,
-):
+) -> DecayParameters:
     if not isinstance(logt, np.ndarray):
         logt = np.array(logt)
     
@@ -108,7 +108,7 @@ def fit_single_shmidt(
     data, bins = np.histogram(logt, bins=n_bins)
     bins = bins[:-1] + np.diff(bins)  # now stores bin centers
 
-    ### Fitting
+    #-------------------------------------
     if bounds is None:
         bounds = (0, [60*1e6, 1e6, 1e6])
     _bounds = []
@@ -132,19 +132,26 @@ def fit_single_shmidt(
     )
     perr = np.sqrt(pcov.diagonal())
 
+    #-------------------------------------
     t = np.log(2) / l
     dt = np.log(2) * perr[0] / l / l
     dn = perr[1]
+    res = DecayParameters(
+        half_life_us=t,
+        n0=n,
+        c=c,
+    )
     print(f"{l=}")
     print(f"T1/2 = {t:.2f}+-{dt:.2f} us")
     print(f'n0 = {n:.1f}+-{dn:.1f}')
     print(f"background constant = {c:.3f}+-{perr[-1]:.3f}")
 
+    #-------------------------------------
     if check_chi_square:
         try:
             if any(data < 10):
                 print("Warning! Some categories have less than 10 counts, chi-square test could be not representative!")
-            res = st.chisquare(data, shmidt(bins, l, n, c), ddof=3)
+            res = st.chisquare(data, shmidt(bins, l, n, c), ddof=chi_square_nddof)
             if res.pvalue > 0.05:
                 print("Good fit!")
             else:
@@ -153,14 +160,15 @@ def fit_single_shmidt(
         except Exception as e:
             print(f"Chi-square test failed: {e}")
 
-    #####
+    #-------------------------------------
     if visualize:
         x = np.linspace(bins.min(), bins.max(), 100)
         plt.errorbar(x=bins, y=data, yerr=np.sqrt(data), fmt='o')
         plt.plot(x, shmidt(x, l, n, c))
         plt.xlabel(r'$ln_{\Delta T}$')
         plt.ylabel('count/channel')
-
+    
+    return res
 
 # def fit_double_shmidt(df, n_bins, pts_drop, nddof=5):
 #     d, b = np.histogram(df.logt, bins=n_bins)
