@@ -11,9 +11,32 @@ class DecayParameters:
     half_life_us: float
     n0: float
     c: float = 0
+    delta_half_life_us: float | None = None
+    delta_n0:           float | None = None
+    delta_c:            float | None = None
 
     def to_lnc(self):
-        return [np.log(2) / self.half_life_us, self.n0, self.c]
+        return [float(np.log(2) / self.half_life_us), self.n0, self.c]
+
+    def __repr__(self) -> str:
+        str_list = []
+
+        name_to_field = {
+            "T1/2": [self.half_life_us, self.delta_half_life_us],
+            "n0":   [self.n0, self.delta_n0],
+            "background constant": [self.c, self.delta_c]
+        }
+        
+        for name, [v, dv] in name_to_field.items():
+            dv = "?" if dv is None else f"{dv:.2f}"
+            s = f"{name} = {v:.2f}+-{dv}"
+            if name == "T1/2":
+                s += " us"
+            str_list.append(s)
+        return "\n".join(str_list)
+
+    def __str__(self):
+        return self.__repr__()
 
 
 def decay_curve_linear(
@@ -67,7 +90,7 @@ def _estimate_bin_width_iqr(logt: np.ndarray) -> float:
 
 def estimate_n_bins(
     logt: np.ndarray,
-    round: bool = True,
+    do_round: bool = True,
     method: Literal["std", "iqr"] = "iqr",
 ):
     """
@@ -83,7 +106,7 @@ def estimate_n_bins(
             f"Expected 'iqr' or 'std' but {method} found."
         )
     n_bins = float((np.max(logt) - np.min(logt)) / w)
-    if round:
+    if do_round:
         n_bins = round(n_bins)
     return n_bins
 
@@ -96,7 +119,6 @@ def fit_single_shmidt(
     n_bins_method: Literal["std", "iqr"] = "iqr",
     check_chi_square: bool = True,
     chi_square_nddof: int = 3,
-    visualize: bool = True,
 ) -> DecayParameters:
     if not isinstance(logt, np.ndarray):
         logt = np.array(logt)
@@ -110,7 +132,7 @@ def fit_single_shmidt(
 
     #-------------------------------------
     if bounds is None:
-        bounds = (0, [60*1e6, 1e6, 1e6])
+        bounds = (0, DecayParameters(1e-6, 1e6, 1e6))
     _bounds = []
     for b in bounds:
         if isinstance(b, DecayParameters):
@@ -136,39 +158,50 @@ def fit_single_shmidt(
     t = np.log(2) / l
     dt = np.log(2) * perr[0] / l / l
     dn = perr[1]
+    dc = perr[2]
     res = DecayParameters(
-        half_life_us=t,
-        n0=n,
-        c=c,
+        half_life_us=t, delta_half_life_us=dt,
+        n0=n, delta_n0=dn,
+        c=c, delta_c=dc,
     )
     print(f"{l=}")
-    print(f"T1/2 = {t:.2f}+-{dt:.2f} us")
-    print(f'n0 = {n:.1f}+-{dn:.1f}')
-    print(f"background constant = {c:.3f}+-{perr[-1]:.3f}")
+    print(res)
 
     #-------------------------------------
     if check_chi_square:
         try:
             if any(data < 10):
                 print("Warning! Some categories have less than 10 counts, chi-square test could be not representative!")
-            res = st.chisquare(data, shmidt(bins, l, n, c), ddof=chi_square_nddof)
-            if res.pvalue > 0.05:
+            chi = st.chisquare(data, shmidt(bins, l, n, c), ddof=chi_square_nddof)
+            if chi.pvalue > 0.05:
                 print("Good fit!")
             else:
                 print("Bad fit!")
-            print("chi-square", res)
+            print("chi-square", chi)
         except Exception as e:
             print(f"Chi-square test failed: {e}")
-
-    #-------------------------------------
-    if visualize:
-        x = np.linspace(bins.min(), bins.max(), 100)
-        plt.errorbar(x=bins, y=data, yerr=np.sqrt(data), fmt='o')
-        plt.plot(x, shmidt(x, l, n, c))
-        plt.xlabel(r'$ln_{\Delta T}$')
-        plt.ylabel('count/channel')
-    
     return res
+
+
+def visualize_single_fit(
+    logt: Iterable,
+    decay_parameters: DecayParameters,
+    n_bins: int | None = None,
+    n_bins_method: Literal["std", "iqr"] = "iqr",
+) -> None:
+    if n_bins is None:
+        n_bins = estimate_n_bins(logt=logt, method=n_bins_method)
+    
+    data, bins = np.histogram(logt, bins=n_bins)
+    bins = bins[:-1] + np.diff(bins)  # now stores bin centers
+    x = np.linspace(bins.min(), bins.max(), 100)
+    plt.errorbar(x=bins, y=data, yerr=np.sqrt(data), fmt='o')
+    [l,n,c] = decay_parameters.to_lnc()
+    plt.plot(x, shmidt(x, l, n, c))
+    plt.xlabel(r'$ln_{\Delta T}$')
+    plt.ylabel('count/channel')
+    plt.show()
+
 
 # def fit_double_shmidt(df, n_bins, pts_drop, nddof=5):
 #     d, b = np.histogram(df.logt, bins=n_bins)
@@ -225,3 +258,11 @@ def fit_single_shmidt(
 #     print(f"# events observed = {d.sum()}, integral = {np.trapz(y=double_shmidt(xx, l1, n1, l2, n2, c), x=xx)}")
 #     print("chi-square", st.chisquare(d, func, ddof=nddof))
 
+
+
+if __name__ == "__main__":
+    times_mks = np.array([2, 2, 2.1, 2.1, 2.7, 2.8, 2.8, 2.8, 2.8, 3, 3.4, 3.5, 3.6, 3.6, 4, 4, 4, 4.1, 4.3, 4.4, 4.6, 4.7, 5, 5.3, 5.3, 5.5, 5.7, 5.9, 6.3, 6.5, 6.7, 6.7, 7, 7.3, 7.4, 7.8, 7.9, 8.2, 8.3, 8.3, 8.5, 9, 10.2, 10.3, 10.4, 10.7, 11.2, 11.2, 11.6, 11.6, 11.7, 12.1, 12.5, 13.1, 13.2, 13.3, 13.6, 13.7, 13.8, 13.8, 16, 16.8, 19.7, 20.3, 21.5, 21.5, 21.6, 22.2, 23.2, 25.5, 26.7, 27.6, 30.6, 31.8, 31.8, 32.1, 34.6, 44.9, 44.9, 47.6, 59, 76.3, 80.8, 95.2])
+    times_ln = np.log(times_mks)
+    guess = DecayParameters(10, 100, 0)
+    res = fit_single_shmidt(times_ln, initial_guess=guess)
+    visualize_single_fit(logt=times_ln, decay_parameters=res)
