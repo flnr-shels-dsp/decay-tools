@@ -1,0 +1,27 @@
+[project]
+name = "decay-tools"
+version = "0.1.0"
+authors = [
+  { name="Roman Mukhin", email="rmukhin@jinr.ru" },
+]
+description = "Python package for fitting single- and double-component nuclear decay time distributions and estimating optimal bins in the logarithmic form."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.10.1",
+    "numpy>=2.2.5",
+    "scipy>=1.15.2",
+]
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/flnr-shels-dsp/decay-tools/"
+Issues = "https://github.com/flnr-shels-dsp/decay-tools//issues"
+
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
