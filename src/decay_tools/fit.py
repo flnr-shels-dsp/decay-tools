@@ -135,8 +135,8 @@ def _estimate_bin_width_iqr(logt: np.ndarray) -> float:
     """
     q75 = np.quantile(logt, 0.75)
     q25 = np.quantile(logt, 0.25)
-    n = len(logt)
-    width = 2*(q75 - q25) / (n**(1/3))
+    n = len(logt) ** (1/3)
+    width = 2 * (q75 - q25) / n
     return width
 
 
@@ -254,9 +254,9 @@ def fit_double_schmidt(
         bounds = (-np.inf, np.inf)
     _bounds = []
     for b in bounds:
-        if isinstance(b, DecayParameters):
+        if isinstance(b, DoubleDecayParameters):
             # transform half time to exponential decay constant
-            b = b.to_lnc()
+            b = b.to_lnlnc()
         elif isinstance(b, (float, int)):
             pass
         else:

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Callable, Any
 
-from fit import (
+from .fit import (
     DecayParameters,
     DoubleDecayParameters,
     schmidt,
@@ -51,4 +51,3 @@ def visualize_double_fit(
         func=double_schmidt,
         l1=l1, n1=n1, l2=l2, n2=n2, c=c,
     )
-    
