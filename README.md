@@ -75,7 +75,7 @@ print(result)
 visualize_double_fit(data, bins, result)
 ```
 
-## Set boudaries
+## Set boundaries
 
 Both `fit_single_schmidt` and `fit_double_schmidt` accept an optional bounds argument to constrain the fit parameters. Pass a tuple `(lower, upper)`, where each bound can be either a `DecayParameters` (or `DoubleDecayParameters`) instance—whose fields are automatically converted to the log-domain constants—or a scalar/int, which applies the same limit to all parameters.
 
