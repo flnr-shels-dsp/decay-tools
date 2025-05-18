@@ -178,7 +178,9 @@ def get_hist_and_bins(
         n_bins = estimate_n_bins(logt=logt, method=n_bins_method)
     
     data, bins = np.histogram(logt, bins=n_bins)
-    bins = bins[:-1] + np.diff(bins)  # now stores bin centers
+    # np.histogram returns borders of each histogram bin 
+    # now we need to adjust this to store bin centers
+    bins = bins[:-1] + np.diff(bins) / 2
     return data, bins
 
 
