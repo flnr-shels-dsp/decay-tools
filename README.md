@@ -1,4 +1,6 @@
 # decay-tools
+[![PyPI version](https://img.shields.io/pypi/v/decay-tools)](https://pypi.org/project/decay-tools/)  [![License](https://img.shields.io/github/license/flnr-shels-dsp/decay-tools)](https://github.com/flnr-shels-dsp/decay-tools/blob/main/LICENSE)
+
 Tools for analyzing decay time distributions in nuclear physics experiments
 
 
