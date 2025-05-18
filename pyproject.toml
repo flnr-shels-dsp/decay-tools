@@ -1,8 +1,9 @@
 [project]
 name = "decay-tools"
-version = "0.1.0"
+version = "0.1.1"
 authors = [
   { name="Roman Mukhin", email="rmukhin@jinr.ru" },
+  { name="Andrey Isaev" },
 ]
 description = "Python package for fitting single- and double-component nuclear decay time distributions and estimating optimal bins in the logarithmic form."
 readme = "README.md"
@@ -21,6 +22,7 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/flnr-shels-dsp/decay-tools/"
 Issues = "https://github.com/flnr-shels-dsp/decay-tools//issues"
+Changelog = "https://github.com/flnr-shels-dsp/decay-tools/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling >= 1.26"]
