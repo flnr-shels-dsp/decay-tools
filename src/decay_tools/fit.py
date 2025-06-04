@@ -110,6 +110,16 @@ def schmidt(logt, lamb, n, c) -> np.ndarray:
     return _log_curve_zero_bkg(logt, lamb=lamb, n=n) + c
 
 
+def schmidt_integral(logt, lamb, n, c) -> np.ndarray:
+    logt_from = logt - np.diff(logt)[0] / 2
+    logt_to = logt + np.diff(logt)[0] / 2
+
+    k_from = np.exp(logt_from + np.log(lamb))
+    k_to = np.exp(logt_to + np.log(lamb))
+    dN = n * (np.exp(-k_from) - np.exp(-k_to))
+    return dN
+
+
 def double_schmidt(logt, l1, n1, l2, n2, c):
     """
     # TODO
@@ -207,7 +217,7 @@ def fit_single_schmidt(
         _bounds.append(b)
     
     [l, n, c], pcov = op.curve_fit(
-        schmidt,
+        schmidt_integral, # schmidt,
         bins,
         data,
         p0=initial_guess.to_lnc(),

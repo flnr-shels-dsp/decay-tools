@@ -20,7 +20,7 @@ def _visualize_fit(
     yerr = np.sqrt(data)
     plt.errorbar(x=bins, y=data, yerr=yerr, fmt='o')
     
-    plt.plot(x, func(x, **kwargs))
+    plt.plot(x, func(x, **kwargs) * np.diff(bins)[0])
     plt.xlabel(r'$ln_{\Delta T}$')
     plt.ylabel('count/channel')
     plt.show()
