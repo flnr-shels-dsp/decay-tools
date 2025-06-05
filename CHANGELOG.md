@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v0.2.0] - 2025-06-05
+
 ### Added
 - **Integral-based decay functions**  
   - `schmidt_integral(logt, lamb, n, c)`  
