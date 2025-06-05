@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.optimize as op
 import scipy.stats as st
+import scipy.integrate
 from typing import Literal, Iterable
 from dataclasses import dataclass
 
@@ -111,13 +112,28 @@ def schmidt(logt, lamb, n, c) -> np.ndarray:
 
 
 def schmidt_integral(logt, lamb, n, c) -> np.ndarray:
+    # assume the constant step between logt!
     logt_from = logt - np.diff(logt)[0] / 2
     logt_to = logt + np.diff(logt)[0] / 2
-
+    
     k_from = np.exp(logt_from + np.log(lamb))
     k_to = np.exp(logt_to + np.log(lamb))
-    dN = n * (np.exp(-k_from) - np.exp(-k_to))
-    return dN
+    N = n * (np.exp(-k_from) - np.exp(-k_to)) + c * (logt_to - logt_from)
+    return N
+
+
+def double_schmidt_integral(logt, l1, n1, l2, n2, c):
+    logt_from = logt - np.diff(logt)[0] / 2
+    logt_to = logt + np.diff(logt)[0] / 2
+    
+    k_from = np.exp(logt_from + np.log(l1))
+    k_to = np.exp(logt_to + np.log(l1))
+    N1 = n1 * (np.exp(-k_from) - np.exp(-k_to))
+    l = l2 / l1
+    N2 = n2 * (np.exp(-k_from * l) - np.exp(-k_to * l))
+    Nc = c * (logt_to - logt_from)
+    N = N1 + N2 + Nc
+    return N
 
 
 def double_schmidt(logt, l1, n1, l2, n2, c):
@@ -277,7 +293,7 @@ def fit_double_schmidt(
 
     #---------------------------
     [l1, n1, l2, n2, c], pcov = op.curve_fit(
-        f=double_schmidt,
+        f=double_schmidt_integral,# double_schmidt,
         xdata=bins,
         ydata=data,
         p0=initial_guess.to_lnlnc(),

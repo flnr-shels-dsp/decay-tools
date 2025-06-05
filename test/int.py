@@ -4,34 +4,44 @@ sys.path.append("src/")
 
 import numpy as np
 from decay_tools.fit import (
-    schmidt
+    schmidt,
+    double_schmidt_integral,
+    double_schmidt
 )
 import matplotlib.pyplot as plt
 from scipy import integrate
 
 
-def integ(t1, t2, lamb, n0):
-    k1 = np.exp(t1 + np.log(lamb))
-    k2 = np.exp(t2 + np.log(lamb))
-    return n0*(np.exp(-k1) - np.exp(-k2))
+def integ(t1, t2, l1, n1, l2, n2, c):
+    k_from = np.exp(t1 + np.log(l1))
+    k_to = np.exp(t2 + np.log(l1))
+    N1 = n1 * (np.exp(-k_from) - np.exp(-k_to))
+    l = l2 / l1
+    N2 = n2 * (np.exp(-k_from * l) - np.exp(-k_to * l))
+    Nc = c * (t2 - t1)
+    N = N1 + N2 + Nc
+    return N
 
 
 if __name__ == "__main__":
     true_half_life = 8
     n0 = 5_000
-    lt = np.linspace(np.log(1e-1), np.log(100), 500)
+    true_half_life_2 = 50
+    n0_2 = 1000
+
     lamb = np.log(2) / true_half_life
-    f = schmidt(lt, lamb, n=n0, c=0)
+    lamb_2 = np.log(2) / true_half_life_2
+    
+    # f = double_schmidt(lt, l1=lamb, l2=lamb_2, n1=n0, n2=n0_2, c=0)
     t1 = np.log(10)
     t2 = np.log(20)
+    lt = np.linspace(t1, t2, 500)
 
-    i1 = integ(t1, t2, lamb, n0)
+    i1 = integ(t1, t2, l1=lamb, l2=lamb_2, n1=n0, n2=n0_2, c=3)
     print(i1)
     x = np.linspace(t1, t2, 500)
     i2 = integrate.trapezoid(
-        y=schmidt(x, lamb, n=n0, c=0),
+        y=double_schmidt(lt, l1=lamb, l2=lamb_2, n1=n0, n2=n0_2, c=3),
         x=x,
     )
     print(i2)
-    print(i2 / i1)
-    print(np.diff(x)[0])
