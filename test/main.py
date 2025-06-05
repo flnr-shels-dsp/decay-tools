@@ -33,11 +33,12 @@ if __name__ == "__main__":
     true_half_life_2 = 80
     true_n0_2 = 1_000
     times_mks_2 = np.random.exponential(scale=true_half_life_2 / np.log(2), size=true_n0_2)
-    print(f"Second activity: True T1/2={true_half_life:.2f}; Sampled T1/2={np.mean(times_mks_2)*np.log(2):.2f}")
+    print("\n")
+    print(f"Second activity: True T1/2={true_half_life_2:.2f}; Sampled T1/2={np.mean(times_mks_2)*np.log(2):.2f}")
+    print(f"Second activity: True n0 = {true_n0_2}")
     comb_times_mks = np.append(times_mks, times_mks_2)
     comb_log_times = np.log(comb_times_mks)
-    print(comb_times_mks)
-    print("\n")
+    
     data, bins = get_hist_and_bins(logt=comb_log_times, n_bins_method="iqr")
     g = DoubleDecayParameters(
         hl_short_us=0.7 * true_half_life,
