@@ -258,7 +258,7 @@ def fit_single_schmidt(
         try:
             if any(data < 10):
                 print("Warning! Some categories have less than 10 counts, chi-square test could be not representative!")
-            chi = st.chisquare(data, schmidt(bins, l, n, c), ddof=chi_square_nddof)
+            chi = st.chisquare(data, schmidt_integral(bins, l, n, c), ddof=chi_square_nddof)
             if chi.pvalue > 0.05:
                 print("Good fit!")
             else:
@@ -325,7 +325,7 @@ def fit_double_schmidt(
         try:
             if any(data < 10):
                 print("Warning! Some categories have less than 10 counts, chi-square test could be not representative!")
-            chi = st.chisquare(data, double_schmidt(bins, l1, n1, l2, n2, c), ddof=chi_square_nddof)
+            chi = st.chisquare(data, double_schmidt_integral(bins, l1, n1, l2, n2, c), ddof=chi_square_nddof)
             if chi.pvalue > 0.05:
                 print("Good fit!")
             else:
