@@ -22,6 +22,9 @@
   ```diff
   - plt.plot(x, func(x, **kwargs))
   + plt.plot(x, func(x, **kwargs) * np.diff(bins)[0])
+  ```
+  This ensures the fitted curve is correctly scaled to “count per bin” when overlaid on a histogram.
+
 
 ## [v0.1.1] - 2025-05-18
 
