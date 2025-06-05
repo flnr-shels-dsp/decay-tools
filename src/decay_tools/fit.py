@@ -9,11 +9,11 @@ from dataclasses import dataclass
 @dataclass
 class DecayParameters:
     hl_us: float
-    n0: float
-    c: float = 0
-    d_hl: float | None = None
-    d_n0:           float | None = None
-    d_c:            float | None = None
+    n0:    float
+    c:     float = 0
+    d_hl:  float | None = None
+    d_n0:  float | None = None
+    d_c:   float | None = None
 
     def to_lnc(self):
         return [float(np.log(2) / self.hl_us), self.n0, self.c]
@@ -42,15 +42,15 @@ class DecayParameters:
 @dataclass
 class DoubleDecayParameters:
     hl_short_us: float
-    hl_long_us: float
-    n0_short:   float
-    n0_long:    float
-    c:          float = 0
-    d_hl_short: float | None = None
-    d_hl_long:  float | None = None
-    d_n0_short: float | None = None
-    d_n0_long:  float | None = None
-    d_c:        float | None = None
+    hl_long_us:  float
+    n0_short:    float
+    n0_long:     float
+    c:           float = 0
+    d_hl_short:  float | None = None
+    d_hl_long:   float | None = None
+    d_n0_short:  float | None = None
+    d_n0_long:   float | None = None
+    d_c:         float | None = None
 
     def to_lnlnc(self) -> list[float]:
         l_short = float(np.log(2) / self.hl_short_us)
@@ -93,9 +93,9 @@ class DoubleDecayParameters:
 
 
 def decay_curve_linear(
-    t: Iterable, 
+    t:   Iterable, 
     lam: float,
-    n0: float,
+    n0:  float,
 ) -> np.ndarray:
     return n0 * lam * np.exp(-lam * t)
 
