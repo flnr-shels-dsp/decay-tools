@@ -8,11 +8,11 @@ from dataclasses import dataclass
 @dataclass
 class DecayParameters:
     hl_us: float
-    n0: float
-    c: float = 0
-    d_hl: float | None = None
-    d_n0:           float | None = None
-    d_c:            float | None = None
+    n0:    float
+    c:     float = 0
+    d_hl:  float | None = None
+    d_n0:  float | None = None
+    d_c:   float | None = None
 
     def to_lnc(self):
         return [float(np.log(2) / self.hl_us), self.n0, self.c]
@@ -41,15 +41,15 @@ class DecayParameters:
 @dataclass
 class DoubleDecayParameters:
     hl_short_us: float
-    hl_long_us: float
-    n0_short:   float
-    n0_long:    float
-    c:          float = 0
-    d_hl_short: float | None = None
-    d_hl_long:  float | None = None
-    d_n0_short: float | None = None
-    d_n0_long:  float | None = None
-    d_c:        float | None = None
+    hl_long_us:  float
+    n0_short:    float
+    n0_long:     float
+    c:           float = 0
+    d_hl_short:  float | None = None
+    d_hl_long:   float | None = None
+    d_n0_short:  float | None = None
+    d_n0_long:   float | None = None
+    d_c:         float | None = None
 
     def to_lnlnc(self) -> list[float]:
         l_short = float(np.log(2) / self.hl_short_us)
@@ -92,9 +92,9 @@ class DoubleDecayParameters:
 
 
 def decay_curve_linear(
-    t: Iterable, 
+    t:   Iterable, 
     lam: float,
-    n0: float,
+    n0:  float,
 ) -> np.ndarray:
     return n0 * lam * np.exp(-lam * t)
 
@@ -108,6 +108,31 @@ def schmidt(logt, lamb, n, c) -> np.ndarray:
     # TODO
     """
     return _log_curve_zero_bkg(logt, lamb=lamb, n=n) + c
+
+
+def schmidt_integral(logt, lamb, n, c) -> np.ndarray:
+    # assume the constant step between logt!
+    logt_from = logt - np.diff(logt)[0] / 2
+    logt_to = logt + np.diff(logt)[0] / 2
+    
+    k_from = np.exp(logt_from + np.log(lamb))
+    k_to = np.exp(logt_to + np.log(lamb))
+    N = n * (np.exp(-k_from) - np.exp(-k_to)) + c * (logt_to - logt_from)
+    return N
+
+
+def double_schmidt_integral(logt, l1, n1, l2, n2, c):
+    logt_from = logt - np.diff(logt)[0] / 2
+    logt_to = logt + np.diff(logt)[0] / 2
+    
+    k_from = np.exp(logt_from + np.log(l1))
+    k_to = np.exp(logt_to + np.log(l1))
+    N1 = n1 * (np.exp(-k_from) - np.exp(-k_to))
+    l = l2 / l1
+    N2 = n2 * (np.exp(-k_from * l) - np.exp(-k_to * l))
+    Nc = c * (logt_to - logt_from)
+    N = N1 + N2 + Nc
+    return N
 
 
 def double_schmidt(logt, l1, n1, l2, n2, c):
@@ -207,7 +232,7 @@ def fit_single_schmidt(
         _bounds.append(b)
     
     [l, n, c], pcov = op.curve_fit(
-        schmidt,
+        schmidt_integral, # schmidt,
         bins,
         data,
         p0=initial_guess.to_lnc(),
@@ -232,7 +257,7 @@ def fit_single_schmidt(
         try:
             if any(data < 10):
                 print("Warning! Some categories have less than 10 counts, chi-square test could be not representative!")
-            chi = st.chisquare(data, schmidt(bins, l, n, c), ddof=chi_square_nddof)
+            chi = st.chisquare(data, schmidt_integral(bins, l, n, c), ddof=chi_square_nddof)
             if chi.pvalue > 0.05:
                 print("Good fit!")
             else:
@@ -267,7 +292,7 @@ def fit_double_schmidt(
 
     #---------------------------
     [l1, n1, l2, n2, c], pcov = op.curve_fit(
-        f=double_schmidt,
+        f=double_schmidt_integral,# double_schmidt,
         xdata=bins,
         ydata=data,
         p0=initial_guess.to_lnlnc(),
@@ -299,7 +324,7 @@ def fit_double_schmidt(
         try:
             if any(data < 10):
                 print("Warning! Some categories have less than 10 counts, chi-square test could be not representative!")
-            chi = st.chisquare(data, double_schmidt(bins, l1, n1, l2, n2, c), ddof=chi_square_nddof)
+            chi = st.chisquare(data, double_schmidt_integral(bins, l1, n1, l2, n2, c), ddof=chi_square_nddof)
             if chi.pvalue > 0.05:
                 print("Good fit!")
             else:
