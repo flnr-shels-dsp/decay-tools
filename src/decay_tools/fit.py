@@ -1,7 +1,6 @@
 import numpy as np
 import scipy.optimize as op
 import scipy.stats as st
-import scipy.integrate
 from typing import Literal, Iterable
 from dataclasses import dataclass
 
