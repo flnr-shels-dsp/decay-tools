@@ -3,7 +3,7 @@ import sys
 sys.path.append("src/")
 
 import numpy as np
-from decay_tools import (
+from decay_tools.half_live import (
     DecayParameters,
     DoubleDecayParameters,
     fit_single_schmidt,
