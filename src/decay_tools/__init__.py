@@ -1,3 +1,3 @@
 __all__ = [
-    "half_live",
+    "half_life",
 ]
