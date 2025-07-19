@@ -1,127 +1,69 @@
 import pandas as pd
-from sklearn.cluster import KMeans
-import numpy as np
-from IPython.display import display
 import matplotlib.pyplot as plt
 
-def read_and_select_columns(filename: str) -> pd.DataFrame:
-    df = pd.read_csv(filename)
-    df.columns = df.columns.str.strip()
-    selected_columns = ["File", "Median Energy", "Total Integral", "Total"]
-    df_selected = df[selected_columns]
-    return df_selected
 
-def cluster_by_energy(df: pd.DataFrame, n_groups: int = 5) -> pd.DataFrame:
-    df.columns = df.columns.str.strip()
-
-    energies = df["Median Energy"].dropna().values.reshape(-1, 1)
-
-    kmeans = KMeans(n_clusters=n_groups, random_state=0)
-    labels = kmeans.fit_predict(energies)
-
-    df_clean = df[df["Median Energy"].notna()].copy()
-    df_clean["GroupLabel"] = labels
-    df_clean["Energy"] = df_clean["Median Energy"]
-
-    cluster_centers = kmeans.cluster_centers_.flatten()
-    sorted_centers = np.sort(cluster_centers)
-
-    boundaries = []
-    for i in range(len(sorted_centers) - 1):
-        midpoint = (sorted_centers[i] + sorted_centers[i+1]) / 2
-        boundaries.append(midpoint)
-
-    min_energy = df_clean["Energy"].min()
-    max_energy = df_clean["Energy"].max()
-    boundaries = [min_energy - 1e-6] + boundaries + [max_energy + 1e-6]
-
-    def assign_group(energy):
-        for i in range(n_groups):
-            if boundaries[i] < energy <= boundaries[i+1]:
-                return i
-        return -1
-
-    df_clean["EnergyGroup"] = df_clean["Energy"].apply(assign_group)
-
-    for i in range(n_groups):
-        group = df_clean[df_clean["EnergyGroup"] == i]
-        if group.empty:
-            continue
-        group_min = round(group["Energy"].min(), 2)
-        group_max = round(group["Energy"].max(), 2)
-        group_center = round(group["Energy"].mean(), 2)
-
-        print(f"\n=== Группа {i+1} ===")
-        print(f"Центральная энергия: {group_center} МэВ")
-        print(f"Диапазон: от {group_min} до {group_max} МэВ")
-
-        display(group[["File", "Median Energy", "Total Integral", "Total"]].sort_values("Median Energy"))
-
-    return df_clean
-
-def check_grouping_completeness(df_clean: pd.DataFrame) -> None:
-
-    total_with_energy = df_clean.shape[0]
-    total_grouped = df_clean[df_clean["EnergyGroup"] != -1].shape[0]
-
-    if total_with_energy == total_grouped:
-        print("\n Каждая строчка с указанной энергией отнесена к какой-либо группе.")
-    else:
-        print(f"\n Внимание: {total_with_energy - total_grouped} строк не были отнесены ни к одной группе.")
-
-def plot_energy_groups(df_clean: pd.DataFrame, n_groups: int) -> None:
-    if "EnergyGroup" not in df_clean.columns:
-        print("Сначала нужно выполнить кластеризацию и присвоить группы.")
-        return
+def plot_energy_groups(
+        df: pd.DataFrame,
+        energy_group_col: str,
+        energy_col: str,
+        integral_col: str,
+) -> None:
+    if energy_group_col not in df.columns:
+        raise ValueError(f"Can't find {energy_group_col=} in data frame!")
 
     plt.figure(figsize=(10, 6))
     markers = ['o', 's', 'D', '^', 'v', 'p', '*', 'x']  # добавлены маркеры на случай >4 групп
 
-    for i in range(n_groups):
-        group = df_clean[df_clean["EnergyGroup"] == i]
+    groups = df[energy_group_col].unique()
+    for i, group_name in enumerate(groups):
+        group = df.loc[df[energy_group_col] == group_name]
         if group.empty:
             continue
-        plt.scatter(group["Median Energy"], group["Total Integral"],
-                    label=f"Группа {i+1}",
+        plt.scatter(group[energy_col], group[integral_col],
+                    label=f"Group {group_name}",
                     marker=markers[i % len(markers)],
                     alpha=0.7)
 
     plt.xlabel("Median Energy (MeV)")
     plt.ylabel("Total Integral")
-    plt.title("Группировка по энергии")
     plt.legend()
-    plt.grid(True)
+    plt.grid()
     plt.tight_layout()
     plt.show()
 
-def calculate_group_summary(df_clean: pd.DataFrame, n_groups: int) -> pd.DataFrame:
-    if "EnergyGroup" not in df_clean.columns:
-        print("Сначала запустите ячейку с кластеризацией.")
-        return pd.DataFrame()
+
+def calculate_group_summary(
+        df: pd.DataFrame,
+        energy_group_col: str,
+        energy_col: str,
+        integral_col: str,
+        n_events_col: str,
+) -> pd.DataFrame:
+    if energy_group_col not in df.columns:
+        raise ValueError(f"Can't find {energy_group_col=} in data frame!")
     
     result = []
 
-    for i in range(n_groups):
-        group = df_clean[df_clean["EnergyGroup"] == i]
-
-        total_integral = group["Total Integral"].sum()
-        total_events = group["Total"].sum()
+    for i, group_name in enumerate(df[energy_group_col].unique()):
+        group = df.loc[df[energy_group_col] == group_name]
+        total_integral = group[integral_col].sum()
+        total_events = group[n_events_col].sum()
 
         if total_integral == 0:
             weighted_energy = None
         else:
-            weighted_energy = (group["Median Energy"] * group["Total Integral"]).sum() / total_integral
+            weighted_energy = (group[energy_col] * group[integral_col]).sum() / total_integral
 
         result.append({
-            "Группа": i + 1,
-            "Суммарный интеграл": round(total_integral, 2),
-            "Взвешенная средняя энергия": round(weighted_energy, 3) if weighted_energy is not None else "н/д",
-            "Количество событий": int(total_events)
+            "Group": i + 1,
+            "Total integral": round(total_integral, 2),
+            "Wheighted median energy": round(weighted_energy, 3) if weighted_energy is not None else "н/д",
+            "Events number": int(total_events)
         })
 
     summary_df = pd.DataFrame(result)
-    display(summary_df)
     return summary_df
+
 
 def sum_integral_and_ion_count(df_clean: pd.DataFrame,
                                ion_charge: float,
