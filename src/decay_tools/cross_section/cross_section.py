@@ -1,426 +1,297 @@
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def plot_energy_groups(
-        df: pd.DataFrame,
-        energy_group_col: str,
-        energy_col: str,
-        integral_col: str,
-) -> None:
-    if energy_group_col not in df.columns:
-        raise ValueError(f"Can't find {energy_group_col=} in data frame!")
-
-    plt.figure(figsize=(10, 6))
-    markers = ['o', 's', 'D', '^', 'v', 'p', '*', 'x']  # добавлены маркеры на случай >4 групп
-
-    groups = df[energy_group_col].unique()
-    for i, group_name in enumerate(groups):
-        group = df.loc[df[energy_group_col] == group_name]
-        if group.empty:
-            continue
-        plt.scatter(group[energy_col], group[integral_col],
-                    label=f"Group {group_name}",
-                    marker=markers[i % len(markers)],
-                    alpha=0.7)
-
-    plt.xlabel("Median Energy (MeV)")
-    plt.ylabel("Total Integral")
-    plt.legend()
-    plt.grid()
-    plt.tight_layout()
-    plt.show()
+def read_and_select_columns(
+    filename: str,
+    cols: list[str],
+) -> pd.DataFrame:
+    df = pd.read_csv(filename)
+    df.columns = df.columns.str.strip()
+    missing = set(cols) - set(df.columns)
+    if missing:
+        raise ValueError(f"Missing columns in input: {missing}")
+    return df[cols].copy()
 
 
 def calculate_group_summary(
-        df: pd.DataFrame,
-        energy_group_col: str,
-        energy_col: str,
-        integral_col: str,
-        n_events_col: str,
+    df: pd.DataFrame,
+    group_col: str,
+    energy_col: str,
+    integral_col: str,
+    events_col: str,
 ) -> pd.DataFrame:
-    if energy_group_col not in df.columns:
-        raise ValueError(f"Can't find {energy_group_col=} in data frame!")
-    
-    result = []
+    for c in (group_col, energy_col, integral_col, events_col):
+        if c not in df.columns:
+            raise ValueError(f"Column not found: {c}")
 
-    for i, group_name in enumerate(df[energy_group_col].unique()):
-        group = df.loc[df[energy_group_col] == group_name]
-        total_integral = group[integral_col].sum()
-        total_events = group[n_events_col].sum()
-
-        if total_integral == 0:
-            weighted_energy = None
+    rows: list[dict] = []
+    for group in sorted(df[group_col].unique()):
+        grp = df[df[group_col] == group]
+        total_int = grp[integral_col].sum()
+        total_ev  = grp[events_col].sum()
+        if total_int == 0:
+            weighted = np.nan
         else:
-            weighted_energy = (group[energy_col] * group[integral_col]).sum() / total_integral
-
-        result.append({
-            "Group": i + 1,
-            "Total integral": round(total_integral, 2),
-            "Wheighted median energy": round(weighted_energy, 3) if weighted_energy is not None else "н/д",
-            "Events number": int(total_events)
+            weighted = (grp[energy_col] * grp[integral_col]).sum() / total_int
+        rows.append({
+            "group":           group,
+            "total_integral":  total_int,
+            "weighted_energy": weighted,
+            "event_count":     total_ev,
         })
 
-    summary_df = pd.DataFrame(result)
-    return summary_df
+    return pd.DataFrame(rows)
 
 
-def sum_integral_and_ion_count(df_clean: pd.DataFrame,
-                               ion_charge: float,
-                               n_groups: int) -> pd.DataFrame:
-    elementary_charge = 1.602e-19
-    micro_to_coulomb = 1e-6
+def sum_integral_and_ion_count(
+    df: pd.DataFrame,
+    group_col: str,
+    integral_col: str,
+    ion_charge: float,
+    e_charge: float,
+    micro_to_coulomb: float = 1e-6,
+) -> pd.DataFrame:
+    for c in (group_col, integral_col):
+        if c not in df.columns:
+            raise ValueError(f"Column not found: {c}")
 
-    if "EnergyGroup" not in df_clean.columns:
-        print("Сначала запустите кластеризацию.")
-        return pd.DataFrame()
-    
-    result = []
-
-    for i in range(n_groups):
-        group = df_clean[df_clean["EnergyGroup"] == i]
-        total_integral = group["Total Integral"].sum()
-        Q_coulomb = total_integral * micro_to_coulomb
-
-        if Q_coulomb == 0:
-            ion_count = 0
-        else:
-            ion_count = Q_coulomb / (ion_charge * elementary_charge)
-
-        result.append({
-            "Группа": i + 1,
-            "Суммарный интеграл (мкКл)": round(total_integral, 2),
-            "Количество ионов": f"{ion_count:.2e}"
+    sums = df.groupby(group_col)[integral_col].sum()
+    rows: list[dict] = []
+    for group, total_int in sums.items():
+        Q    = total_int * micro_to_coulomb
+        ions = Q / (ion_charge * e_charge) if Q != 0 else 0.0
+        rows.append({
+            "group":          group,
+            "total_integral": total_int,
+            "ion_count":      ions,
         })
 
-    ion_df = pd.DataFrame(result)
-    display(ion_df)
-    return ion_df
+    return pd.DataFrame(rows)
 
-def calculate_cross_sections(df_clean: pd.DataFrame, n_groups: int, t: float = 7.26e17, 
-                              eps: float = 0.02, ion_charge: float = 10.0, 
-                              e_charge: float = 1.602e-19, to_pb: float = 1e36) -> pd.DataFrame:
-    if "EnergyGroup" not in df_clean.columns:
-        print("Сначала нужно провести кластеризацию.")
-        return pd.DataFrame()
 
-    result = []
+def calculate_cross_sections(
+    df: pd.DataFrame,
+    group_col: str,
+    events_col: str,
+    integral_col: str,
+    t: float,
+    eps: float,
+    ion_charge: float,
+    e_charge: float,
+    to_pb: float,
+) -> pd.DataFrame:
+    for c in (group_col, events_col, integral_col):
+        if c not in df.columns:
+            raise ValueError(f"Column not found: {c}")
 
-    for i in range(n_groups):
-        group = df_clean[df_clean["EnergyGroup"] == i]
-
-        N_events = group["Total"].sum()
-        total_integral = group["Total Integral"].sum()  # мкКл
-        Q_coulomb = total_integral * 1e-6
-        i_ions = Q_coulomb / (ion_charge * e_charge)
-
-        if i_ions == 0:
-            sigma_cm2 = 0
-        else:
-            sigma_cm2 = N_events / (i_ions * t * eps)
-
-        sigma_pb = sigma_cm2 * to_pb
-
-        result.append({
-            "Группа": i + 1,
-            "Событий N": int(N_events),
-            "Ионов i": f"{i_ions:.2e}",
-            "Сечение (см²)": f"{sigma_cm2:.3e}",
-            "Сечение (пб)": round(sigma_pb, 2)
+    rows: list[dict] = []
+    for group, grp in df.groupby(group_col):
+        N         = grp[events_col].sum()
+        total_int = grp[integral_col].sum()
+        Q         = total_int * 1e-6
+        ions      = Q / (ion_charge * e_charge) if Q != 0 else 0.0
+        sigma_cm2 = N / (ions * t * eps) if ions != 0 else 0.0
+        sigma_pb  = sigma_cm2 * to_pb
+        rows.append({
+            "group":             group,
+            "event_count":       N,
+            "ion_count":         ions,
+            "cross_section_cm2": sigma_cm2,
+            "cross_section_pb":  sigma_pb,
         })
 
-    sigma_df = pd.DataFrame(result)
-    display(sigma_df)
-    return sigma_df
+    return pd.DataFrame(rows)
 
-def plot_cross_section_vs_energy(sigma_df: pd.DataFrame, summary_df: pd.DataFrame):
-    if sigma_df is None or summary_df is None:
-        print("Ошибка: одна из таблиц не передана.")
-        return
 
-    merged_df = pd.merge(sigma_df, summary_df, on="Группа")
+def calculate_cross_section_uncertainty(
+    df: pd.DataFrame,
+    cross_col: str,
+    events_col: str,
+) -> pd.DataFrame:
+    for c in (cross_col, events_col):
+        if c not in df.columns:
+            raise ValueError(f"Column not found: {c}")
 
-    plt.figure(figsize=(8, 6))
-    plt.plot(merged_df["Взвешенная средняя энергия"], merged_df["Сечение (пб)"],
-             marker='o', linestyle='-', markersize=8)
+    out = df.copy()
+    σ = out[cross_col].astype(float)
+    N = out[events_col].astype(float)
 
-    plt.xlabel("Взвешенная средняя энергия (МэВ)")
-    plt.ylabel("Сечение (пб)")
-    plt.title("")
+    σ_up  = (N + (1 + np.sqrt(N))) * σ / N
+    σ_low = (N - np.sqrt(N))       * σ / N
+
+    out["err_up"]  = σ_up  - σ
+    out["err_low"] = σ    - σ_low
+    return out
+
+
+def plot_energy_groups(
+    df: pd.DataFrame,
+    group_col: str,
+    energy_col: str,
+    integral_col: str,
+) -> None:
+    for c in (group_col, energy_col, integral_col):
+        if c not in df.columns:
+            raise ValueError(f"Column not found: {c}")
+
+    plt.figure(figsize=(10, 6))
+    markers = ['o','s','D','^','v','p','*','x']
+    for i, grp in enumerate(sorted(df[group_col].unique())):
+        sub = df[df[group_col] == grp]
+        plt.scatter(
+            sub[energy_col],
+            sub[integral_col],
+            marker=markers[i % len(markers)],
+            label=f"group {grp}",
+            alpha=0.7,
+        )
+    plt.xlabel("Median Energy (MeV)")
+    plt.ylabel("Total Integral")
+    plt.legend()
     plt.grid(True)
     plt.tight_layout()
     plt.show()
 
-def calculate_cross_section_uncertainty(sigma_df: pd.DataFrame) -> pd.DataFrame:
-    if sigma_df is None or sigma_df.empty:
-        print("Ошибка: таблица sigma_df пуста или не передана.")
-        return None
 
-    try:
-        sigma_df["Сечение (пб)"] = pd.to_numeric(sigma_df["Сечение (пб)"], errors='coerce')
-        sigma_df["Событий N"] = pd.to_numeric(sigma_df["Событий N"], errors='coerce')
+def plot_cross_section_vs_energy(
+    df: pd.DataFrame,
+    energy_col: str,
+    cross_col: str,
+) -> None:
+    for c in (energy_col, cross_col):
+        if c not in df.columns:
+            raise ValueError(f"Column not found: {c}")
 
-        N = sigma_df["Событий N"]
-        sigma_pb = sigma_df["Сечение (пб)"]
-
-        sigma_up = (N + (1 + N ** 0.5)) * sigma_pb / N
-        sigma_err_up = sigma_up - sigma_pb
-
-        sigma_low = (N - N ** 0.5) * sigma_pb / N
-        sigma_err_low = sigma_pb - sigma_low
-
-        sigma_df["Погрешность вверх (пб)"] = sigma_err_up.round(2)
-        sigma_df["Погрешность вниз (пб)"] = sigma_err_low.round(2)
-
-        display(sigma_df[["Группа", "Сечение (пб)", "Погрешность вверх (пб)", "Погрешность вниз (пб)"]])
-        return sigma_df
-
-    except Exception as e:
-        print(f"Произошла ошибка при расчёте: {e}")
-        return None
-
-def plot_cross_section_with_errors(summary_df: pd.DataFrame, sigma_df: pd.DataFrame):
-    if summary_df is None or sigma_df is None:
-        print("Ошибка: одна из таблиц не определена.")
-        return
-
-    try:
-        merged_df = pd.merge(sigma_df, summary_df, on="Группа")
-
-        x = merged_df["Взвешенная средняя энергия"]
-        y = merged_df["Сечение (пб)"]
-        yerr_lower = merged_df["Погрешность вниз (пб)"]
-        yerr_upper = merged_df["Погрешность вверх (пб)"]
-
-        plt.figure(figsize=(8, 6))
-        plt.errorbar(x, y,
-                     yerr=[yerr_lower, yerr_upper],
-                     fmt='o-', capsize=5, markersize=8)
-
-        plt.xlabel("Взвешенная средняя энергия (МэВ)")
-        plt.ylabel("Сечение (пб)")
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
-    except Exception as e:
-        print(f"Произошла ошибка при построении графика: {e}")
-
-def plot_cross_section_with_energy_errors(df_clean: pd.DataFrame,
-                                          summary_df: pd.DataFrame,
-                                          sigma_df: pd.DataFrame,
-                                          n_groups: int):
-    if any(df is None for df in [df_clean, summary_df, sigma_df]):
-        print("Ошибка: одна или несколько таблиц не определены.")
-        return
-
-    try:
-        energy_ranges = {}
-
-        for i in range(n_groups):
-            group = df_clean[df_clean["EnergyGroup"] == i]
-            if group.empty:
-                continue
-            group_min = group["Energy"].min()
-            group_max = group["Energy"].max()
-            group_center = group["Energy"].mean()
-
-            energy_ranges[i + 1] = {
-                "min": group_min,
-                "max": group_max,
-                "center": group_center
-            }
-
-        merged_df = pd.merge(sigma_df, summary_df, on="Группа")
-
-        x = merged_df["Взвешенная средняя энергия"]
-        y = merged_df["Сечение (пб)"]
-        yerr_lower = merged_df["Погрешность вниз (пб)"]
-        yerr_upper = merged_df["Погрешность вверх (пб)"]
-        xerr_lower = []
-        xerr_upper = []
-
-        for _, row in merged_df.iterrows():
-            group_id = row["Группа"]
-            E_center = row["Взвешенная средняя энергия"]
-            E_min = energy_ranges[group_id]["min"]
-            E_max = energy_ranges[group_id]["max"]
-            xerr_lower.append(E_center - E_min)
-            xerr_upper.append(E_max - E_center)
-
-        plt.figure(figsize=(8, 6))
-        plt.errorbar(x, y,
-                     xerr=[xerr_lower, xerr_upper],
-                     yerr=[yerr_lower, yerr_upper],
-                     fmt='o-', capsize=5, markersize=8)
-
-        plt.xlabel("Взвешенная средняя энергия (МэВ)")
-        plt.ylabel("Сечение (пб)")
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-    except Exception as e:
-        print(f"Ошибка при построении графика: {e}")
-
-def build_cross_section_table(df_clean: pd.DataFrame, summary_df: pd.DataFrame,
-                               sigma_df: pd.DataFrame, n_groups: int) -> pd.DataFrame:
-    if any(df is None for df in [df_clean, summary_df, sigma_df]):
-        print("Ошибка: отсутствуют необходимые таблицы.")
-        return pd.DataFrame()
-
-    energy_ranges = {}
-    for i in range(n_groups):
-        group = df_clean[df_clean["EnergyGroup"] == i]
-        if group.empty:
-            continue
-        energy_ranges[i + 1] = {
-            "min": group["Energy"].min(),
-            "max": group["Energy"].max(),
-            "center": group["Energy"].mean()
-        }
-
-    merged_df = pd.merge(sigma_df, summary_df, on="Группа")
-
-    rows = []
-    for _, row in merged_df.iterrows():
-        group = int(row["Группа"])
-        E = row["Взвешенная средняя энергия"]
-        E_min = energy_ranges[group]["min"]
-        E_max = energy_ranges[group]["max"]
-        E_err_plus = round(E_max - E, 3)
-        E_err_minus = round(E - E_min, 3)
-
-        sigma = round(row["Сечение (пб)"], 2)
-        sigma_err_plus = round(row["Погрешность вверх (пб)"], 2)
-        sigma_err_minus = round(row["Погрешность вниз (пб)"], 2)
-
-        rows.append({
-            "Точка": group,
-            "Энергия (МэВ)": round(E, 3),
-            "Ошибка энергии +": E_err_plus,
-            "Ошибка энергии –": E_err_minus,
-            "Сечение (пб)": sigma,
-            "Ошибка сечения +": sigma_err_plus,
-            "Ошибка сечения –": sigma_err_minus
-        })
-
-    final_table = pd.DataFrame(rows)
-    display(final_table)
-    return final_table
-
-def build_group_summary(df_clean: pd.DataFrame,
-                        summary_df: pd.DataFrame,
-                        n_groups: int) -> pd.DataFrame:
-    if df_clean is None or summary_df is None:
-        print("Ошибка: не найдены нужные данные.")
-        return pd.DataFrame()
-
-    group_info = []
-
-    for i in range(n_groups):
-        group_data = df_clean[df_clean["EnergyGroup"] == i]
-        if group_data.empty:
-            continue
-
-        group_id   = i + 1
-        group_min  = group_data["Energy"].min()
-        group_max  = group_data["Energy"].max()
-        group_mean = group_data["Energy"].mean()
-        weighted_row = summary_df[summary_df["Группа"] == group_id]
-        if not weighted_row.empty:
-            weighted_energy = weighted_row["Взвешенная средняя энергия"].values[0]
-        else:
-            weighted_energy = None
-
-        err_plus  = round(group_max - weighted_energy, 3)
-        err_minus = round(weighted_energy - group_min, 3)
-
-        group_info.append({
-            "Группа": group_id,
-            "Центральная энергия (средняя)": round(group_mean, 3),
-            "Взвешенная энергия": round(weighted_energy, 3),
-            "Диапазон (Мин–Макс)": f"{round(group_min, 2)} – {round(group_max, 2)}",
-            "Ошибка + (от макс)": err_plus,
-            "Ошибка – (от мин)": err_minus
-        })
-
-    group_summary_df = pd.DataFrame(group_info)
-    display(group_summary_df)
-    return group_summary_df
-
-def plot_shifted_cross_section(df_clean: pd.DataFrame,
-                               summary_df: pd.DataFrame,
-                               sigma_df: pd.DataFrame,
-                               n_groups: int,
-                               substrate_loss: float = 3.9,
-                               target_loss: float = 1.08) -> tuple:
-
-    if df_clean is None or summary_df is None or sigma_df is None:
-        print("Ошибка: не найдены необходимые таблицы.")
-        return None
-
-    energy_shift = substrate_loss + target_loss / 2
-    print(f"Смещение энергии (подложка + мишень/2): {energy_shift:.3f} МэВ")
-
-    energy_ranges = {}
-    for i in range(n_groups):
-        group = df_clean[df_clean["EnergyGroup"] == i]
-        if group.empty:
-            continue
-        energy_ranges[i + 1] = {
-            "min": group["Energy"].min(),
-            "max": group["Energy"].max()
-        }
-
-    merged_df = pd.merge(sigma_df, summary_df, on="Группа")
-
-    x_lab = merged_df["Взвешенная средняя энергия"] - energy_shift
-    y = merged_df["Сечение (пб)"]
-    yerr_lower = merged_df["Погрешность вниз (пб)"]
-    yerr_upper = merged_df["Погрешность вверх (пб)"]
-
-    xerr_lower = []
-    xerr_upper = []
-
-    for _, row in merged_df.iterrows():
-        group_id = row["Группа"]
-        E_center = row["Взвешенная средняя энергия"]
-        E_min = energy_ranges[group_id]["min"]
-        E_max = energy_ranges[group_id]["max"]
-        xerr_lower.append(E_center - E_min)
-        xerr_upper.append(E_max - E_center)
-
-    # Построение графика
     plt.figure(figsize=(8, 6))
-    plt.errorbar(x_lab, y,
-                 xerr=[xerr_lower, xerr_upper],
-                 yerr=[yerr_lower, yerr_upper],
-                 fmt='o-', capsize=5, markersize=8)
+    plt.plot(df[energy_col], df[cross_col], 'o-')
+    plt.xlabel("Weighted Energy (MeV)")
+    plt.ylabel("Cross Section (pb)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
-    plt.xlabel("Энергия в лабораторной СК (МэВ)")
-    plt.ylabel("Сечение (пб)")
-    plt.title("")
+
+def plot_cross_section_with_errors(
+    df: pd.DataFrame,
+    energy_col: str,
+    cross_col: str,
+    err_low_col: str,
+    err_up_col: str,
+) -> None:
+    for c in (energy_col, cross_col, err_low_col, err_up_col):
+        if c not in df.columns:
+            raise ValueError(f"Column not found: {c}")
+
+    plt.figure(figsize=(8, 6))
+    plt.errorbar(
+        df[energy_col],
+        df[cross_col],
+        yerr=[df[err_low_col], df[err_up_col]],
+        fmt='o-',
+        capsize=5,
+    )
+    plt.xlabel("Weighted Energy (MeV)")
+    plt.ylabel("Cross Section (pb)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_cross_section_with_energy_errors(
+    df: pd.DataFrame,
+    energy_col: str,
+    cross_col: str,
+    err_low_col: str,
+    err_up_col: str,
+    group_col: str,
+) -> None:
+    for c in (energy_col, cross_col, err_low_col, err_up_col, group_col):
+        if c not in df.columns:
+            raise ValueError(f"Column not found: {c}")
+
+    ranges = df.groupby(group_col)[energy_col].agg(min='min', max='max')
+    x_low = df.apply(lambda r: r[energy_col] - ranges.loc[r[group_col],'min'], axis=1)
+    x_up  = df.apply(lambda r: ranges.loc[r[group_col],'max'] - r[energy_col], axis=1)
+
+    plt.figure(figsize=(8, 6))
+    plt.errorbar(
+        df[energy_col],
+        df[cross_col],
+        xerr=[x_low, x_up],
+        yerr=[df[err_low_col], df[err_up_col]],
+        fmt='o-',
+        capsize=5,
+    )
+    plt.xlabel("Weighted Energy (MeV)")
+    plt.ylabel("Cross Section (pb)")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_shifted_cross_section(
+    df_clean: pd.DataFrame,
+    summary_df: pd.DataFrame,
+    sigma_df: pd.DataFrame,
+    substrate_loss: float = 3.9,
+    target_loss:    float = 1.08,
+) -> tuple:
+    sum2 = summary_df.rename(columns={"group":"group","weighted_energy":"energy"})[["group","energy"]]
+    sig2 = sigma_df.rename(columns={
+        "group":"group",
+        "cross_section_pb":"cross",
+        "err_low":"err_low",
+        "err_up":"err_up"
+    })[["group","cross","err_low","err_up"]]
+    merged = pd.merge(sum2, sig2, on="group")
+
+    rng = df_clean.groupby("EnergyGroup")["Energy"].agg(min="min", max="max") \
+          .reset_index().rename(columns={"EnergyGroup":"group"})
+    merged = merged.merge(rng, on="group")
+
+    y           = merged["cross"].to_numpy()
+    yerr_lower  = merged["err_low"].tolist()
+    yerr_upper  = merged["err_up"].tolist()
+    x_center    = merged["energy"]
+    xerr_lower  = (x_center - merged["min"]).tolist()
+    xerr_upper  = (merged["max"] - x_center).tolist()
+    shift       = substrate_loss + target_loss/2
+    x_lab       = (x_center - shift).to_numpy()
+
+    plt.figure(figsize=(8,6))
+    plt.errorbar(x_lab, y, xerr=[xerr_lower, xerr_upper], yerr=[yerr_lower, yerr_upper],
+                 fmt='o-', capsize=5, markersize=6)
+    plt.xlabel("Laboratory Energy (MeV)")
+    plt.ylabel("Cross Section (pb)")
     plt.grid(True)
     plt.tight_layout()
     plt.show()
 
     return x_lab, y, xerr_lower, xerr_upper, yerr_lower, yerr_upper
 
-def plot_single_channel(data, label="Канал", color="blue", marker='o',
-                        title="Сечение реакции", xlabel="Энергия (МэВ)", ylabel="Сечение (пб)") -> None:
+
+def plot_single_channel(
+    data: list[tuple],
+    label:    str   = "Channel",
+    color:    str   = None,
+    marker:   str   = "o",
+    title:    str   = "Cross Section",
+    xlabel:   str   = "Energy (MeV)",
+    ylabel:   str   = "Cross Section (pb)",
+) -> None:
     df = pd.DataFrame(data, columns=[
         "Energy", "Value", "Err_Up_Y", "Err_Down_Y", "Err_Down_X", "Err_Up_X"
     ])
+    df["Energy"]      /= 1e6
+    df["Value"]       *= 1e12
+    df["Err_Up_Y"]    *= 1e12
+    df["Err_Down_Y"]  *= 1e12
+    df["Err_Down_X"]  /= 1e6
+    df["Err_Up_X"]    /= 1e6
 
-    df["Energy"] = df["Energy"] / 1e6            # эВ → МэВ
-    df["Value"] = df["Value"] * 1e12             # барн → пб
-    df["Err_Up_Y"] = df["Err_Up_Y"] * 1e12
-    df["Err_Down_Y"] = df["Err_Down_Y"] * 1e12
-    df["Err_Down_X"] = df["Err_Down_X"] / 1e6
-    df["Err_Up_X"] = df["Err_Up_X"] / 1e6
-
-    # Построение графика
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(8,6))
     plt.errorbar(
         df["Energy"], df["Value"],
         xerr=[df["Err_Down_X"], df["Err_Up_X"]],
@@ -428,7 +299,6 @@ def plot_single_channel(data, label="Канал", color="blue", marker='o',
         fmt=marker, capsize=5, label=label,
         color=color, ecolor=color
     )
-
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
@@ -436,60 +306,132 @@ def plot_single_channel(data, label="Канал", color="blue", marker='o',
     plt.legend()
     plt.tight_layout()
     plt.show()
-data_4n = [
-    (1.2180E+08, 5.0000E-11, 3.0000E-11, 2.0000E-11, 1.2180E+06, 1.2180E+06),
-    (1.2810E+08, 1.7000E-10, 8.0000E-11, 5.0000E-11, 1.2810E+06, 1.2810E+06),
-    (1.3300E+08, 1.8000E-10, 8.0000E-11, 6.0000E-11, 1.3300E+06, 1.3300E+06)
-]
 
-def plot_combined_cross_section(x_lab, y, xerr_lower, xerr_upper, yerr_lower, yerr_upper,
-                                 A1=26, A2=238, Q=-78.2) -> None:
-    if any(arg is None for arg in [x_lab, y, xerr_lower, xerr_upper, yerr_lower, yerr_upper]):
-        print("Ошибка: не все входные данные заданы.")
-        return
 
+def plot_combined_cross_section(
+    x_lab,
+    y,
+    xerr_lower,
+    xerr_upper,
+    yerr_lower,
+    yerr_upper,
+    gate_data:    list[tuple] | None = None,
+    gate_label:   str               = "Gate Data",
+    gate_color:   str               = "gold",
+    gate_marker:  str               = "s",
+    A1:           float             = 26,
+    A2:           float             = 238,
+    Q:            float             = -78.2,
+) -> None:
     excitation_energy = x_lab * (A2 / (A1 + A2)) + Q
 
-    data_4n = [
-        (1.2180E+08, 5.0000E-11, 3.0000E-11, 2.0000E-11, 1.2180E+06, 1.2180E+06),
-        (1.2810E+08, 1.7000E-10, 8.0000E-11, 5.0000E-11, 1.2810E+06, 1.2810E+06),
-        (1.3300E+08, 1.8000E-10, 8.0000E-11, 6.0000E-11, 1.3300E+06, 1.3300E+06)
-    ]
-    
-    df_gate = pd.DataFrame(data_4n, columns=[
-        "Energy", "Value", "Err_Up_Y", "Err_Down_Y", "Err_Down_X", "Err_Up_X"
-    ])
-    
-    df_gate["Energy"] = df_gate["Energy"] / 1e6  # эВ → МэВ
-    df_gate["Value"] = df_gate["Value"] * 1e12  # барн → пб
-    df_gate["Err_Up_Y"] = df_gate["Err_Up_Y"] * 1e12
-    df_gate["Err_Down_Y"] = df_gate["Err_Down_Y"] * 1e12
-    df_gate["Err_Down_X"] = df_gate["Err_Down_X"] / 1e6
-    df_gate["Err_Up_X"] = df_gate["Err_Up_X"] / 1e6
+    fig, ax1 = plt.subplots(figsize=(9,6))
+    ax1.errorbar(
+        x_lab, y,
+        xerr=[xerr_lower, xerr_upper],
+        yerr=[yerr_lower, yerr_upper],
+        fmt='o-', capsize=5, markersize=6,
+        label="Your data"
+    )
 
-    fig, ax1 = plt.subplots(figsize=(9, 6))
+    if gate_data is not None:
+        df_gate = pd.DataFrame(
+            gate_data,
+            columns=["Energy","Value","Err_Up_Y","Err_Down_Y","Err_Down_X","Err_Up_X"]
+        )
+        df_gate["Energy"]     /= 1e6
+        df_gate["Value"]      *= 1e12
+        df_gate["Err_Up_Y"]   *= 1e12
+        df_gate["Err_Down_Y"] *= 1e12
+        df_gate["Err_Down_X"] /= 1e6
+        df_gate["Err_Up_X"]   /= 1e6
 
-    ax1.errorbar(x_lab, y,
-                 xerr=[xerr_lower, xerr_upper],
-                 yerr=[yerr_lower, yerr_upper],
-                 fmt='o-', capsize=5, markersize=8, label="FLNR, SHELS", color='green')
+        ax1.errorbar(
+            df_gate["Energy"], df_gate["Value"],
+            xerr=[df_gate["Err_Down_X"], df_gate["Err_Up_X"]],
+            yerr=[df_gate["Err_Down_Y"], df_gate["Err_Up_Y"]],
+            fmt=gate_marker, capsize=5, label=gate_label,
+            color=gate_color, ecolor=gate_color
+        )
 
-    ax1.errorbar(df_gate["Energy"], df_gate["Value"],
-                 xerr=[df_gate["Err_Down_X"], df_gate["Err_Up_X"]],
-                 yerr=[df_gate["Err_Down_Y"], df_gate["Err_Up_Y"]],
-                 fmt='s', capsize=5, label="4n (Rf-260), Gates", color='gold')
-
-    ax1.set_xlabel("Энергия в лабораторной СК (МэВ)")
-    ax1.set_ylabel("Сечение (пб)")
-    ax1.grid(True)
+    ax1.set_xlabel("Laboratory Energy (MeV)")
+    ax1.set_ylabel("Cross Section (pb)")
     ax1.legend()
+    ax1.grid(True)
 
     ax2 = ax1.twiny()
-    ax2.set_xlim(ax1.get_xlim()) 
+    ax2.set_xlim(ax1.get_xlim())
     ax2.set_xticks(x_lab)
     ax2.set_xticklabels([f"{val:.1f}" for val in excitation_energy])
-    ax2.set_xlabel("Энергия возбуждения (МэВ)")
+    ax2.set_xlabel("Excitation Energy (MeV)")
 
-    plt.title("")
     plt.tight_layout()
     plt.show()
+
+
+def build_cross_section_table(
+    df_clean:  pd.DataFrame,
+    summary_df: pd.DataFrame,
+    sigma_df:   pd.DataFrame,
+) -> pd.DataFrame:
+    sum2 = (
+        summary_df
+        .rename(columns={"group":"group","weighted_energy":"energy"})
+        [["group","energy"]]
+    )
+    sig2 = (
+        sigma_df
+        .rename(columns={
+            "group":"group",
+            "cross_section_pb":"cross",
+            "err_low":"err_low",
+            "err_up":"err_up"
+        })
+        [["group","cross","err_low","err_up"]]
+    )
+    rng = (
+        df_clean
+        .groupby("EnergyGroup")["Energy"]
+        .agg(min="min", max="max")
+        .reset_index()
+        .rename(columns={"EnergyGroup":"group"})
+    )
+    rng = rng.merge(sum2, on="group")
+    rng["err_energy_low"] = rng["energy"] - rng["min"]
+    rng["err_energy_up"]  = rng["max"]    - rng["energy"]
+
+    merged = (
+        sum2
+        .merge(sig2, on="group")
+        .merge(rng[["group","err_energy_low","err_energy_up"]], on="group")
+    )
+
+    return pd.DataFrame({
+        "group":          merged["group"],
+        "energy":         merged["energy"],
+        "err_energy_low": merged["err_energy_low"],
+        "err_energy_up":  merged["err_energy_up"],
+        "cross":          merged["cross"],
+        "err_low":        merged["err_low"],
+        "err_up":         merged["err_up"],
+    })
+
+
+def build_group_summary(
+    df: pd.DataFrame,
+    group_col: str,
+    energy_col: str,
+) -> pd.DataFrame:
+    if group_col not in df.columns or energy_col not in df.columns:
+        raise ValueError(f"Column not found: {group_col} or {energy_col}")
+
+    agg = df.groupby(group_col)[energy_col].agg(min="min", max="max", mean="mean")
+    agg["err_energy_low"] = agg["mean"] - agg["min"]
+    agg["err_energy_up"]  = agg["max"]  - agg["mean"]
+
+    agg = agg.reset_index().rename(columns={
+        group_col:   "group",
+        "mean":      "energy_mean"
+    })
+
+    return agg[["group", "energy_mean", "err_energy_low", "err_energy_up"]]
