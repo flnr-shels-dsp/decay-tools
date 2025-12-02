@@ -1,6 +1,99 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+from typing import Tuple, Dict, Any
+
+
+def cluster_and_categorize_energy(
+    df: pd.DataFrame,
+    energy_column_name: str,
+    n_clusters: int
+) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    Performs K-Means clustering on a specified energy column of a DataFrame, 
+    categorizes rows into groups based on sorted cluster boundaries, and prints 
+    summary statistics for each group.
+
+    Args:
+        df: The input pandas DataFrame.
+        energy_column_name: The name of the column containing energy values.
+        n_clusters: The number of clusters to form.
+
+    Returns:
+        A tuple containing:
+        - pd.DataFrame: A new DataFrame with original data plus "GroupLabel", 
+                        "Energy", and "EnergyGroup" columns.
+        - Dict: A dictionary containing summary statistics for each group.
+    """
+    
+    # 1. Prepare data
+    df.columns = df.columns.str.strip()
+    energies = df[energy_column_name].dropna().values.reshape(-1, 1)
+
+    if energies.size == 0:
+        print("No valid energy data found. Returning original DataFrame.")
+        return df.copy(), {}
+    
+    # 2. Perform K-Means clustering
+    kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init=10) # Added n_init for modern sklearn versions
+    labels = kmeans.fit_predict(energies)
+
+    # 3. Create cleaned DataFrame and assign initial labels
+    df_clean = df[df[energy_column_name].notna()].copy()
+    df_clean["GroupLabel"] = labels
+    df_clean["Energy"] = df_clean[energy_column_name]
+
+    # 4. Determine boundaries based on cluster centers
+    cluster_centers = kmeans.cluster_centers_.flatten()
+    sorted_centers = sorted(cluster_centers)
+
+    boundaries = []
+    for i in range(len(sorted_centers) - 1):
+        midpoint = (sorted_centers[i] + sorted_centers[i+1]) / 2
+        boundaries.append(midpoint)
+
+    # Add min/max boundaries
+    min_energy = df_clean["Energy"].min()
+    max_energy = df_clean["Energy"].max()
+    # Add a small epsilon to ensure min/max values fall within a boundary range
+    boundaries = [min_energy - 1e-6] + boundaries + [max_energy + 1e-6]
+
+    # 5. Define assignment function and apply it
+    def assign_group(energy):
+        for i in range(n_clusters):
+            # Using i+1 for the upper boundary check to match list indexing
+            if boundaries[i] < energy <= boundaries[i+1]:
+                return i
+        return -1
+
+    df_clean["EnergyGroup"] = df_clean["Energy"].apply(assign_group)
+    
+    # 6. Generate summary statistics and print results
+    summary_stats = {}
+    for i in range(n_clusters):
+        group = df_clean[df_clean["EnergyGroup"] == i]
+        if group.empty:
+            continue
+        
+        group_min = round(group["Energy"].min(), 2)
+        group_max = round(group["Energy"].max(), 2)
+        group_center = round(group["Energy"].mean(), 2)
+
+        stats = {
+            "mean_energy_MeV": group_center,
+            "min_energy_MeV": group_min,
+            "max_energy_MeV": group_max,
+            "count": len(group)
+        }
+        summary_stats[f"Group {i+1}"] = stats
+
+        print(f"\n=== Group {i+1} ===")
+        print(f"Mean energy: {group_center} MeV")
+        print(f"Energy range: from {group_min} to {group_max} MeV")
+        print(f"Count: {len(group)}")
+
+    return df_clean, summary_stats
 
 
 def read_and_select_columns(
@@ -50,7 +143,7 @@ def sum_integral_and_ion_count(
     group_col: str,
     integral_col: str,
     ion_charge: float,
-    e_charge: float,
+    e_charge: float = 1.602e-19,
     micro_to_coulomb: float = 1e-6,
 ) -> pd.DataFrame:
     for c in (group_col, integral_col):
@@ -79,8 +172,8 @@ def calculate_cross_sections(
     t: float,
     eps: float,
     ion_charge: float,
-    e_charge: float,
-    to_pb: float,
+    e_charge: float = 1.602e-19,
+    to_pb: float = 1e36,
 ) -> pd.DataFrame:
     for c in (group_col, events_col, integral_col):
         if c not in df.columns:
@@ -315,10 +408,10 @@ def plot_combined_cross_section(
     xerr_upper,
     yerr_lower,
     yerr_upper,
-    gate_data:    list[tuple] | None = None,
-    gate_label:   str               = "Gate Data",
-    gate_color:   str               = "gold",
-    gate_marker:  str               = "s",
+    ref_data:    list[tuple] | None = None,
+    ref_label:   str               = "Reference Data",
+    ref_color:   str               = "gold",
+    ref_marker:  str               = "s",
     A1:           float             = 26,
     A2:           float             = 238,
     Q:            float             = -78.2,
@@ -334,24 +427,24 @@ def plot_combined_cross_section(
         label="Your data"
     )
 
-    if gate_data is not None:
-        df_gate = pd.DataFrame(
-            gate_data,
+    if ref_data is not None:
+        df_ref = pd.DataFrame(
+            ref_data,
             columns=["Energy","Value","Err_Up_Y","Err_Down_Y","Err_Down_X","Err_Up_X"]
         )
-        df_gate["Energy"]     /= 1e6
-        df_gate["Value"]      *= 1e12
-        df_gate["Err_Up_Y"]   *= 1e12
-        df_gate["Err_Down_Y"] *= 1e12
-        df_gate["Err_Down_X"] /= 1e6
-        df_gate["Err_Up_X"]   /= 1e6
+        df_ref["Energy"]     /= 1e6
+        df_ref["Value"]      *= 1e12
+        df_ref["Err_Up_Y"]   *= 1e12
+        df_ref["Err_Down_Y"] *= 1e12
+        df_ref["Err_Down_X"] /= 1e6
+        df_ref["Err_Up_X"]   /= 1e6
 
         ax1.errorbar(
-            df_gate["Energy"], df_gate["Value"],
-            xerr=[df_gate["Err_Down_X"], df_gate["Err_Up_X"]],
-            yerr=[df_gate["Err_Down_Y"], df_gate["Err_Up_Y"]],
-            fmt=gate_marker, capsize=5, label=gate_label,
-            color=gate_color, ecolor=gate_color
+            df_ref["Energy"], df_ref["Value"],
+            xerr=[df_ref["Err_Down_X"], df_ref["Err_Up_X"]],
+            yerr=[df_ref["Err_Down_Y"], df_ref["Err_Up_Y"]],
+            fmt=ref_marker, capsize=5, label=ref_label,
+            color=ref_color, ecolor=ref_color
         )
 
     ax1.set_xlabel("Laboratory Energy (MeV)")
