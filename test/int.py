@@ -3,7 +3,7 @@ import sys
 sys.path.append("src/")
 
 import numpy as np
-from decay_tools.fit import (
+from decay_tools.half_life.fit import (
     schmidt,
     double_schmidt_integral,
     double_schmidt
