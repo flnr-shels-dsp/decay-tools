@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [v0.3.0] - 2025-12-02
+
+### Added
+
+- New cross-section module. 
+
 ## [v0.2.0] - 2025-06-05
 
 ### Added
